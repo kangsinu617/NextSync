@@ -4,7 +4,7 @@ cd NextSync
 
 pip install google-genai python-dotenv fastapi uvicorn jinja2 python-multipart
 
-echo "GEMINI_API_KEY=발급받은키" > .env   
+echo "GEMINI_API_KEY=발급받은키" > .env   (.env_example을 .env로 변경해야 함.)
 
 uvicorn src.app:app --host 0.0.0.0 --port 8000
 
