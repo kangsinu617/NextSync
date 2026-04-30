@@ -26,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 LOGS_DIR = PROJECT_ROOT / "logs"
 EVENTS_LOG = LOGS_DIR / "events.jsonl"
+SESSIONS_LOG = LOGS_DIR / "sessions.jsonl"
 
 USER_TYPES = ["대학생", "직장인", "프리랜서", "팀 사용자"]
 
@@ -226,6 +227,60 @@ def register(user_id: int, user_type: str, out: dict[str, Any], team_id: int = 1
         payload = {"user_id": user_id, "message": n["message"]}
         post_mock("/api/notifications", payload)
         log_event(user_id, user_type, "/api/notifications", payload)
+
+
+def log_session(
+    session_id: str,
+    user_id: str,
+    user_type: str,
+    goal: str,
+    out: dict[str, Any],
+    elapsed_ms: int,
+) -> None:
+    LOGS_DIR.mkdir(exist_ok=True)
+    record = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "session_id": session_id,
+        "user_id": user_id,
+        "user_type": user_type,
+        "goal": goal,
+        "tasks_count": len(out.get("tasks", [])),
+        "invites_count": len(out.get("team_invites", [])),
+        "notifs_count": len(out.get("notifications", [])),
+        "elapsed_ms": elapsed_ms,
+    }
+    with SESSIONS_LOG.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def session_summary() -> dict[str, Any]:
+    if not SESSIONS_LOG.exists():
+        return {"total": 0, "by_user_type": {}, "avg_elapsed_ms": 0, "recent": [], "top_keywords": {}}
+    sessions = []
+    with SESSIONS_LOG.open(encoding="utf-8") as f:
+        for line in f:
+            sessions.append(json.loads(line))
+
+    by_type: dict[str, int] = defaultdict(int)
+    keyword_counts: dict[str, int] = defaultdict(int)
+    total_elapsed = 0
+
+    for s in sessions:
+        by_type[s["user_type"]] += 1
+        total_elapsed += s.get("elapsed_ms", 0)
+        for word in s["goal"].split():
+            if len(word) > 1:
+                keyword_counts[word] += 1
+
+    top_keywords = dict(sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True)[:10])
+
+    return {
+        "total": len(sessions),
+        "by_user_type": dict(by_type),
+        "avg_elapsed_ms": round(total_elapsed / len(sessions)) if sessions else 0,
+        "recent": sessions[-10:][::-1],
+        "top_keywords": top_keywords,
+    }
 
 
 def feedback_summary() -> dict[str, Any]:
