@@ -23,6 +23,9 @@
       padding: 16px 24px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
     header h1 { margin: 0; font-size: 18px; }
     header .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
@@ -169,6 +172,7 @@
     <header>
       <h1>NextSync Guide</h1>
       <div class="sub">자연어 목표 → AI 자동 Task 생성 챗봇</div>
+      <a href="/analytics" style="margin-left: auto; font-size: 12px; color: #8892b0; text-decoration: none;">Analytics →</a>
     </header>
 
     <div class="chat-area" id="chatArea"></div>
@@ -181,7 +185,7 @@
 
   <script>
     let sessionId = Date.now() + Math.random().toString(36).substr(2, 9);
-    let conversationStep = 0;
+    let conversationStep = 0; // 0=start, 1=ask_goal, 2=confirm, 3=processing, 4=results
     let userData = { user_id: null, user_type: null, goal: null };
 
     const chatArea = document.getElementById('chatArea');
@@ -232,6 +236,7 @@
         conversationStep = 0.5;
         askUserType();
       } else if (conversationStep === 1) {
+        // Goal input
         userData.goal = text;
         conversationStep = 2;
         confirmAndProcess();
@@ -256,7 +261,7 @@
     }
 
     function askGoal() {
-      const msg = `완벽해요! <strong>${userData.user_type}</strong> 유형이시군요! 🎯<br><br>이번 주(또는 다음 주)에 어떤 목표가 있으신가요?`;
+      const msg = `완벽해요! <strong>${userData.user_type}</strong> 유형이시군요! 🎯<br><br>이번 주(또는 다음 주)에 어떤 목표가 있으신가요?<br><em style="color: var(--muted); font-size: 12px;">(예: "팀플 발표 준비", "프로젝트 킥오프")</em>`;
       addMessage(msg);
       messageInput.focus();
     }
@@ -264,8 +269,20 @@
     function confirmAndProcess() {
       const msg = `"<strong>${userData.goal}</strong>"<br><br>이 목표를 기반으로 첫 작업들을 자동으로 생성해드릴까요?`;
       addMessage(msg, false, [
-        { label: '네, 만들어주세요!', primary: true, onclick: processGoal },
-        { label: '다시 입력', onclick: () => { userData.goal = null; conversationStep = 1; addMessage('목표를 다시 입력해주세요.'); messageInput.focus(); } }
+        {
+          label: '네, 만들어주세요!',
+          primary: true,
+          onclick: processGoal
+        },
+        {
+          label: '다시 입력',
+          onclick: () => {
+            userData.goal = null;
+            conversationStep = 1;
+            addMessage('목표를 다시 입력해주세요.');
+            messageInput.focus();
+          }
+        }
       ]);
     }
 
@@ -289,7 +306,10 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
 
+        // Remove "처리 중..." message
         chatArea.removeChild(chatArea.lastChild);
+
+        // Show results
         displayResults(data);
         conversationStep = 4;
       } catch (error) {
@@ -303,33 +323,61 @@
 
     function displayResults(data) {
       const { user_id, user_type, features, tasks, team_invites, notifications } = data;
+
       let html = `<strong>✨ 준비 완료!</strong><br><br>`;
+
+      // Summary
       html += `<div style="margin: 12px 0; padding: 10px; background: rgba(122, 162, 255, 0.1); border-radius: 6px;">
         <strong>${user_type}</strong>이신 <strong>${user_id}</strong>님을 위해<br>
         <strong>당신의 목표에 딱 맞는 작업</strong>을 만들었습니다! 🎯
       </div>`;
-      html += `<div style="margin: 12px 0;"><strong>📌 추천 기능</strong><br>${features.map(f => f.label).join(' · ')}</div>`;
+
+      // Step 2 - Features
+      html += `<div style="margin: 12px 0;"><strong>📌 추천 기능</strong><br>`;
+      html += `<em style="color: var(--muted); font-size: 12px;">이 기능들을 활용하면 더 잘 진행할 수 있어요</em><br>`;
+      html += `${features.map(f => f.label).join(' · ')}</div>`;
+
+      // Step 3 - Tasks
       html += `<div style="margin: 12px 0;"><strong>✅ 생성된 작업</strong><br>`;
       if (tasks.length > 0) {
         tasks.forEach((t, i) => {
-          if (i === 0) html += `<div style="background: rgba(94, 226, 164, 0.1); border-left: 3px solid #5ee2a4; padding: 8px; border-radius: 4px; margin: 6px 0; font-weight: 500;">👉 <strong>이것부터 하시면 됩니다!</strong><br><span style="font-size: 13px; font-weight: normal;">${t.title}</span></div>`;
-          else html += `<div style="margin: 4px 0; padding-left: 12px;">${i + 1}. ${t.title}</div>`;
+          if (i === 0) {
+            html += `<div style="background: rgba(94, 226, 164, 0.1); border-left: 3px solid #5ee2a4; padding: 8px; border-radius: 4px; margin: 6px 0; font-weight: 500;">
+              👉 <strong>이것부터 하시면 됩니다!</strong><br>
+              <span style="font-size: 13px; font-weight: normal;">${t.title}</span>
+            </div>`;
+          } else {
+            html += `<div style="margin: 4px 0; padding-left: 12px;">${i + 1}. ${t.title}</div>`;
+          }
         });
-      } else html += '<em style="color: var(--muted);">(없음)</em>';
+      } else {
+        html += '<em style="color: var(--muted);">(없음)</em>';
+      }
       html += `</div>`;
+
       if (team_invites.length > 0) {
         html += `<div style="margin: 12px 0;"><strong>👥 팀원 초대</strong><br>`;
-        team_invites.forEach(inv => html += `<div style="margin: 4px 0; padding-left: 12px;">• ${inv.email}</div>`);
+        team_invites.forEach(inv => {
+          html += `<div style="margin: 4px 0; padding-left: 12px;">• ${inv.email}</div>`;
+        });
         html += `</div>`;
       }
+
       if (notifications.length > 0) {
         html += `<div style="margin: 12px 0;"><strong>🔔 알림</strong><br>`;
-        notifications.forEach(notif => html += `<div style="margin: 4px 0; padding-left: 12px;">• ${notif.message}</div>`);
+        notifications.forEach(notif => {
+          html += `<div style="margin: 4px 0; padding-left: 12px;">• ${notif.message}</div>`;
+        });
         html += `</div>`;
       }
+
       addMessage(html);
       addMessage('행운을 빕니다! 다른 목표도 준비해드릴까요?', false, [
-        { label: '네, 다음 목표', primary: true, onclick: continueChat }
+        {
+          label: '네, 다음 목표',
+          primary: true,
+          onclick: continueChat
+        }
       ]);
     }
 
@@ -340,12 +388,26 @@
       askGoal();
     }
 
+    function resetChat() {
+      conversationStep = 0;
+      userData = { user_id: null, user_type: null, goal: null };
+      chatArea.innerHTML = '';
+      messageInput.value = '';
+      startChat();
+    }
+
     function startChat() {
-      const intro = `안녕하세요! 👋<br>저는 NextWave 온보딩 도우미에요!<br><br><strong>NextWave</strong>는 팀과 개인의 생산성을 한 곳에서 관리하는 통합 작업 플랫폼입니다.<br>일정 관리, 팀 협업, 알림 자동화까지 한 번에!<br><br>당신에게 딱 맞는 첫 작업을 만들어드리겠습니다!<br>당신의 user_id가 무엇인가요? (예: alice, user-123 등)`;
+      const intro = `안녕하세요! 👋<br>
+        저는 NextWave 온보딩 도우미에요!<br><br>
+        <strong>NextWave</strong>는 팀과 개인의 생산성을 한 곳에서 관리하는 통합 작업 플랫폼입니다.<br>
+        일정 관리, 팀 협업, 알림 자동화까지 한 번에!<br><br>
+        당신에게 딱 맞는 첫 작업을 만들어드리겠습니다!<br>
+        당신의 user_id가 무엇인가요? (예: alice, user-123 등)`;
       addMessage(intro);
       messageInput.focus();
     }
 
+    // Initialize
     startChat();
   </script>
 </body>
