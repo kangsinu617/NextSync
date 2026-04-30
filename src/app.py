@@ -1,15 +1,7 @@
-"""NextSync Guide 웹 데모 — FastAPI 단일 페이지.
-
-  GET  /           가입 폼 (user_id + goal)
-  POST /onboard    4단계 파이프라인 실행 후 결과 렌더링
-
-실행:
-  uvicorn prototype.app:app --reload --port 8000
-"""
-
 from __future__ import annotations
 
 import io
+import time
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -18,14 +10,16 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from src.core import (
+from prototype.core import (
     USER_TYPES,
     generate_tasks,
     load_feature_usage_logs,
     load_user_segment,
+    log_session,
     profile_user,
     recommend,
     register,
+    session_summary,
     user_recent_activity,
     FEATURE_LABEL,
 )
@@ -96,6 +90,12 @@ async def chat_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "chat.html", {})
 
 
+@app.get("/analytics", response_class=HTMLResponse)
+async def analytics_page(request: Request) -> HTMLResponse:
+    summary = session_summary()
+    return templates.TemplateResponse(request, "analytics.html", {"summary": summary})
+
+
 @app.post("/api/chat/generate")
 async def chat_generate(req: ChatRequest) -> JSONResponse:
     segment = load_user_segment()
@@ -106,11 +106,15 @@ async def chat_generate(req: ChatRequest) -> JSONResponse:
     recent = user_recent_activity(req.user_id, logs)
     features_labeled = [{"code": f, "label": FEATURE_LABEL.get(f, f)} for f in features]
 
+    t0 = time.monotonic()
     out = generate_tasks(user_type, features, recent, req.goal)
+    elapsed_ms = round((time.monotonic() - t0) * 1000)
 
     mock_log = io.StringIO()
     with redirect_stdout(mock_log):
         register(req.user_id, user_type, out)
+
+    log_session(req.session_id, req.user_id, user_type, req.goal, out, elapsed_ms)
 
     return JSONResponse({
         "user_id": req.user_id,
@@ -119,4 +123,5 @@ async def chat_generate(req: ChatRequest) -> JSONResponse:
         "tasks": out.get("tasks", []),
         "team_invites": out.get("team_invites", []),
         "notifications": out.get("notifications", []),
+        "elapsed_ms": elapsed_ms,
     })
